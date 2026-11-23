@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test"
+  },
+  "dependencies": {
+    "h3-js": "^4.1.0"
   }
 }
