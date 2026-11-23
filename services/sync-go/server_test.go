@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	pb "github.com/aegismesh/aegismesh/gen/aegismeshv1"
@@ -152,5 +153,52 @@ func TestRefusedBatchChangesNothing(t *testing.T) {
 	}
 	if hashOf(t, s, "t1") != before {
 		t.Fatal("a refused batch was partly applied")
+	}
+}
+
+func pullSince(t *testing.T, s *Server, tenant string, since int64) batch {
+	t.Helper()
+	out, err := s.PullDelta(ctxFor(tenant), &pb.PullRequest{Payload: []byte(fmt.Sprintf(`{"since_seq":%d}`, since))})
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	var b batch
+	if err := json.Unmarshal(out.Payload, &b); err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestAWriteThatArrivesLateWithAnOldClockIsStillDeliveredToThoseWhoPulledBefore(t *testing.T) {
+	s := NewServer("s")
+	push(t, s, "t1", batch{LWW: []lwwEntry{{Key: "new", Value: "n", HLC: 100 << 16, ReplicaID: "r1"}}})
+	first := pullSince(t, s, "t1", 0)
+	if len(first.LWW) != 1 || first.Cursor != 1 {
+		t.Fatalf("first pull: %+v", first)
+	}
+	// a device that was offline pushes a write made long before: its clock is older than everything already pulled
+	push(t, s, "t1", batch{LWW: []lwwEntry{{Key: "old", Value: "o", HLC: 5 << 16, ReplicaID: "r2"}}})
+	next := pullSince(t, s, "t1", first.Cursor)
+	if len(next.LWW) != 1 || next.LWW[0].Key != "old" || next.Cursor != 2 {
+		t.Fatalf("the late write was not delivered: %+v", next)
+	}
+	if again := pullSince(t, s, "t1", next.Cursor); len(again.LWW) != 0 || again.Cursor != 2 {
+		t.Fatalf("nothing is new: %+v", again)
+	}
+}
+
+func TestOnlyARealChangeMovesTheCursor(t *testing.T) {
+	s := NewServer("s")
+	w := batch{LWW: []lwwEntry{{Key: "k", Value: "v", HLC: 9 << 16, ReplicaID: "r1"}}}
+	push(t, s, "t1", w)
+	push(t, s, "t1", w)                                                                                 // the same write again: no change
+	push(t, s, "t1", batch{LWW: []lwwEntry{{Key: "k", Value: "stale", HLC: 1 << 16, ReplicaID: "r2"}}}) // an older write loses: no change
+	if c := pullSince(t, s, "t1", 0).Cursor; c != 1 {
+		t.Fatalf("cursor %d, want 1", c)
+	}
+	push(t, s, "t1", batch{LWW: []lwwEntry{{Key: "k", Value: "v2", HLC: 10 << 16, ReplicaID: "r2"}}})
+	got := pullSince(t, s, "t1", 1)
+	if got.Cursor != 2 || len(got.LWW) != 1 || got.LWW[0].Value != "v2" {
+		t.Fatalf("a newer write must move the cursor: %+v", got)
 	}
 }

@@ -39,14 +39,17 @@ type orRemove struct {
 type batch struct {
 	ReplicaID string     `json:"replica_id"`
 	Clock     int64      `json:"clock"`
+	Cursor    int64      `json:"cursor"` // on a pull reply: the server's arrival-order position; ask for since_seq=cursor next time
 	LWW       []lwwEntry `json:"lww"`
 	Adds      []orAdd    `json:"orset_adds"`
 	Removes   []orRemove `json:"orset_removes"`
 }
 
 type tenantState struct {
-	regs *crdt.Map
-	sets map[string]*crdt.ORSet
+	regs   *crdt.Map
+	sets   map[string]*crdt.ORSet
+	seq    int64            // arrival order: bumped every time a push changes a register
+	regSeq map[string]int64 // key -> seq of the last change to it
 }
 
 // Server keeps one CRDT state per tenant.
@@ -77,7 +80,7 @@ func tenantOf(ctx context.Context, fromRequest string) (string, error) {
 func (s *Server) state(tenant string) *tenantState {
 	ts := s.tenants[tenant]
 	if ts == nil {
-		ts = &tenantState{regs: crdt.NewMap(), sets: map[string]*crdt.ORSet{}}
+		ts = &tenantState{regs: crdt.NewMap(), sets: map[string]*crdt.ORSet{}, regSeq: map[string]int64{}}
 		s.tenants[tenant] = ts
 	}
 	return ts
@@ -157,7 +160,12 @@ func (s *Server) PushDelta(ctx context.Context, in *pb.DeltaBatch) (*pb.SyncAck,
 	defer s.mu.Unlock()
 	ts := s.state(tenant)
 	for _, e := range b.LWW {
+		before, had := ts.regs.Regs[e.Key]
 		ts.regs.Merge(map[string]crdt.Register{e.Key: {Value: e.Value, Stamp: stampOf(e), Deleted: e.Deleted}})
+		if after := ts.regs.Regs[e.Key]; !had || after != before { // only a real change moves the cursor, so a repeated push costs nobody anything
+			ts.seq++
+			ts.regSeq[e.Key] = ts.seq
+		}
 	}
 	for _, a := range b.Adds {
 		ts.set(a.Set, s.node).Merge(crdt.Delta{Adds: map[string][]string{a.Element: {a.Tag}}})
@@ -178,8 +186,10 @@ func (s *Server) PullDelta(ctx context.Context, in *pb.PullRequest) (*pb.DeltaBa
 	if err != nil {
 		return nil, err
 	}
+	// The cursor is arrival order on this server, not the writes' clocks: a device that was offline can push a write with an old clock after
+	// everyone else has pulled past it, and a clock-based cursor would never deliver it.
 	var req struct {
-		SinceHLC int64 `json:"since_hlc"`
+		SinceSeq int64 `json:"since_seq"`
 	}
 	if len(in.GetPayload()) > 0 {
 		if err := json.Unmarshal(in.GetPayload(), &req); err != nil {
@@ -189,7 +199,7 @@ func (s *Server) PullDelta(ctx context.Context, in *pb.PullRequest) (*pb.DeltaBa
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ts := s.state(tenant)
-	b := batch{ReplicaID: s.node, LWW: []lwwEntry{}, Adds: []orAdd{}, Removes: []orRemove{}}
+	b := batch{ReplicaID: s.node, Cursor: ts.seq, LWW: []lwwEntry{}, Adds: []orAdd{}, Removes: []orRemove{}}
 	keys := make([]string, 0, len(ts.regs.Regs))
 	for k := range ts.regs.Regs {
 		keys = append(keys, k)
@@ -201,7 +211,7 @@ func (s *Server) PullDelta(ctx context.Context, in *pb.PullRequest) (*pb.DeltaBa
 		if h > b.Clock {
 			b.Clock = h
 		}
-		if h > req.SinceHLC {
+		if ts.regSeq[k] > req.SinceSeq {
 			b.LWW = append(b.LWW, lwwEntry{Key: k, Value: r.Value, HLC: h, ReplicaID: r.Stamp.Node, Deleted: r.Deleted})
 		}
 	}
