@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "routing-service"
+version = "0.1.0"
+description = "RoutingService gRPC server: vehicle routing with hazard-blocked edges"
+requires-python = ">=3.10"
+dependencies = ["grpcio", "protobuf", "ortools", "h3>=4"]
+
+[project.scripts]
+routing-service = "server:serve"
+
+[tool.setuptools]
+py-modules = ["server"]
