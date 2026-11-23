@@ -9,6 +9,9 @@ description = "RoutingService gRPC server: vehicle routing with hazard-blocked e
 requires-python = ">=3.10"
 dependencies = ["grpcio", "protobuf", "ortools", "h3>=4"]
 
+[project.optional-dependencies]
+kafka = ["confluent-kafka"]
+
 [project.scripts]
 routing-service = "server:serve"
 
