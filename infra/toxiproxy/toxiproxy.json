@@ -1,0 +1,32 @@
+[
+  {
+    "name": "sync",
+    "listen": "0.0.0.0:52051",
+    "upstream": "host.docker.internal:50051",
+    "enabled": true
+  },
+  {
+    "name": "dispatch",
+    "listen": "0.0.0.0:52052",
+    "upstream": "host.docker.internal:50052",
+    "enabled": true
+  },
+  {
+    "name": "routing",
+    "listen": "0.0.0.0:52053",
+    "upstream": "host.docker.internal:50053",
+    "enabled": true
+  },
+  {
+    "name": "telemetry",
+    "listen": "0.0.0.0:52054",
+    "upstream": "host.docker.internal:50054",
+    "enabled": true
+  },
+  {
+    "name": "triage",
+    "listen": "0.0.0.0:52055",
+    "upstream": "host.docker.internal:50055",
+    "enabled": true
+  }
+]
