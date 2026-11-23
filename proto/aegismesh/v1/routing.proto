@@ -1,0 +1,18 @@
+syntax = "proto3";
+package aegismesh.v1;
+option go_package = "github.com/aegismesh/aegismesh/gen/aegismeshv1;aegismeshv1";
+import "aegismesh/v1/common.proto";
+
+message RoutingRequest {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message RoutingPlan {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+service RoutingService {
+  rpc Optimise(RoutingRequest) returns (RoutingPlan);
+  rpc BlockEdges(HazardPolygon) returns (HazardAck);
+}

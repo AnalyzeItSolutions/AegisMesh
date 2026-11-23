@@ -1,0 +1,58 @@
+syntax = "proto3";
+package aegismesh.v1;
+option go_package = "github.com/aegismesh/aegismesh/gen/aegismeshv1;aegismeshv1";
+
+message Tenants {
+  string id = 1;
+  string name = 2;
+  int64 created_at = 3;
+  string tenant_id = 4;
+}
+
+message Incidents {
+  string id = 1;
+  string kind = 2;
+  string severity = 3;
+  string location = 4;
+  uint64 h3_cell = 5;
+  repeated float embedding = 6;
+  string status = 7;
+  int64 reported_at = 8;
+  string tenant_id = 9;
+}
+
+message HazardZones {
+  string id = 1;
+  string polygon = 2;
+  string kind = 3;
+  bool active = 4;
+  string tenant_id = 5;
+}
+
+message Units {
+  string id = 1;
+  string callsign = 2;
+  int32 capacity = 3;
+  string location = 4;
+  string status = 5;
+  string tenant_id = 6;
+}
+
+message TelemetryFrame {
+  string tenant_id = 1;
+  string unit_id = 2;
+  double lat = 3;
+  double lon = 4;
+  uint64 h3_cell = 5;
+  int64 hlc = 6;
+}
+
+message HazardAck {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message HazardPolygon {
+  string tenant_id = 1;
+  bytes payload = 2;
+}

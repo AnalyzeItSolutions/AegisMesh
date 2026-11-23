@@ -1,0 +1,40 @@
+syntax = "proto3";
+package aegismesh.v1;
+option go_package = "github.com/aegismesh/aegismesh/gen/aegismeshv1;aegismeshv1";
+import "aegismesh/v1/common.proto";
+
+message IncidentReport {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message IncidentAck {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message DispatchRequest {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message DispatchAck {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message VerifyRequest {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+
+message VerifyReply {
+  string tenant_id = 1;
+  bytes payload = 2;
+}
+service DispatchService {
+  rpc ReportIncident(IncidentReport) returns (IncidentAck);
+  rpc DispatchUnit(DispatchRequest) returns (DispatchAck);
+  rpc AddHazard(HazardPolygon) returns (HazardAck);
+  rpc VerifyChain(VerifyRequest) returns (VerifyReply);
+}
