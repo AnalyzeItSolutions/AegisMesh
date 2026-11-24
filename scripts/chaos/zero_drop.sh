@@ -20,7 +20,8 @@ PORT=${ADDR##*:}
 DB_URL='postgres://postgres:dev@127.0.0.1:5432/app?sslmode=disable'
 COUNT=${CHAOS_COUNT:-3000}
 RATE=${CHAOS_RATE:-200}
-PY=${PYTHON:-python3}
+# the project's own virtual environment when the builder made one (its protobuf matches the generated stubs), else whatever python3 is on the PATH
+if [ -n "${PYTHON:-}" ]; then PY=$PYTHON; elif [ -x .builder/venv/bin/python ]; then PY=$PWD/.builder/venv/bin/python; else PY=python3; fi
 WORK=$(mktemp -d)
 DISPATCH_PID=""
 WRITER_PID=""
@@ -39,8 +40,10 @@ trap cleanup EXIT
 command -v docker >/dev/null 2>&1 || needs "the docker command"
 docker info >/dev/null 2>&1 || needs "a running Docker daemon (start Docker Desktop)"
 command -v go >/dev/null 2>&1 || needs "Go"
-"$PY" -c 'import grpc' >/dev/null 2>&1 || needs "Python with grpcio ($PY -m pip install grpcio)"
 [ -d gen/py/aegismesh ] || needs "the generated Python stubs (bash scripts/gen_stubs.sh)"
+"$PY" -c 'import grpc' >/dev/null 2>&1 || needs "Python with grpcio ($PY -m pip install grpcio)"
+stub_error=$("$PY" -c 'import sys; sys.path.insert(0, "gen/py"); import aegismesh.v1.dispatch_pb2_grpc' 2>&1 | tail -n 1)
+[ -z "$stub_error" ] || needs "a Python whose protobuf can load the generated stubs ($PY: $stub_error). Set PYTHON to the project's venv python, or regenerate the stubs with bash scripts/gen_stubs.sh"
 
 # The compose file publishes fixed host ports. A container of another project (or a host process) already holding one would make `compose up` fail
 # with a confusing message, so say exactly what is in the way. Nothing is stopped here: that is the owner's call.
@@ -107,7 +110,15 @@ docker compose up -d --wait redpanda >/dev/null 2>&1 || fail "redpanda did not c
 collect() {
   docker compose exec -T postgres psql -U postgres -d app -At -c \
     "select aggregate_id from event_store where tenant_id = '$TENANT' and event_type = 'IncidentReported'" >"$WORK/db.txt" 2>"$WORK/psql.err" || return 1
-  with_timeout 90 docker compose exec -T redpanda rpk topic consume incidents.verified.events -o start:end -f '%v\n' >"$WORK/topic.txt" 2>"$WORK/rpk.err" || return 1
+  # How many messages the topic holds: the sum of the partitions' high watermarks (`-o start:end` is refused by rpk when any range is empty).
+  local total
+  total=$(docker compose exec -T redpanda rpk topic describe incidents.verified.events -p 2>"$WORK/rpk.err" | awk 'NR > 1 { s += $NF } END { print s + 0 }')
+  echo "topic incidents.verified.events holds $total message(s)"
+  if [ "$total" -gt 0 ]; then
+    with_timeout 90 docker compose exec -T redpanda rpk topic consume incidents.verified.events -o start -n "$total" -f '%v\n' >"$WORK/topic.txt" 2>>"$WORK/rpk.err" || return 1
+  else
+    : >"$WORK/topic.txt"       # nothing was published: the judge reports every accepted write as missing from the topic
+  fi
   "$PY" scripts/chaos/writer.py chain --addr "$ADDR" --tenant "$TENANT" >"$WORK/chain.json" 2>"$WORK/chain.err" || true
 }
 
