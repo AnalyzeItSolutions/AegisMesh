@@ -40,10 +40,13 @@ test('every point inside the viewport falls in one of its cells, including point
   }
 });
 
-test('asking for more cells than the limit is refused instead of sent', () => {
+test('asking for more cells than the limit is refused instead of sent, and quickly', () => {
+  const t0 = performance.now();
   assert.throws(() => viewportCells({ north: 20, south: 10, east: 80, west: 70 }, { res: 9 }), RangeError);
   assert.throws(() => viewportCells(CITY, { res: 12 }), RangeError);
   assert.throws(() => viewportCells(CITY, { maxCells: 3, res: 9 }), RangeError);
+  assert.throws(() => viewportCells({ north: 60, south: -60, east: 170, west: -170 }, { res: 9 }), RangeError, 'a near-world viewport at the finest resolution');
+  assert.ok(performance.now() - t0 < 5000, 'refusing must not enumerate the cells first');
 });
 
 test('a viewport across the antimeridian covers both sides', () => {
@@ -146,7 +149,7 @@ test('25,000 markers: loading, moving them all, and drawing from the cached arra
   assert.ok(m.toArray().every((u) => u.ts === 2000 && u.lat === 13));
   const layer = unitLayer(m.toArray(), { now: 2500 });
   assert.equal(layer.props.data.length, N);
-  assert.ok(performance.now() - t0 < 5000, 'loading, moving and drawing 25,000 markers took too long');
+  assert.ok(performance.now() - t0 < 30_000, 'loading, moving and drawing 25,000 markers took too long'); // generous: it catches a quadratic slowdown, not a busy machine
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------- layers

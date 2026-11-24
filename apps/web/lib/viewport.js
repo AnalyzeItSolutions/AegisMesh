@@ -35,6 +35,16 @@ export function chooseResolution(bounds, maxCells = MAX_CELLS) {
 
 const wrap = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
 
+/** A map library's bounds object (getNorth/getSouth/getEast/getWest, longitudes possibly beyond +-180 after panning round the world) -> a checked rectangle. */
+export function fromMapBounds(b) {
+  const north = Math.min(85, b.getNorth());
+  const south = Math.max(-85, b.getSouth());
+  const west = b.getWest();
+  const east = b.getEast();
+  if (east - west >= 360) return { north, south, west: -180, east: 180 };
+  return { north, south, west: wrap(west), east: wrap(east) };
+}
+
 /** The rectangle widened by one cell edge, so a unit just outside the visible edge is already subscribed when the map pans. */
 function pad(b, res) {
   const km = getHexagonEdgeLengthAvg(res, 'km');
@@ -52,6 +62,8 @@ export function viewportCells(bounds, { res, maxCells = MAX_CELLS } = {}) {
   const r = res ?? chooseResolution(bounds, maxCells);
   if (!Number.isInteger(r) || r < 0 || r > MAX_RES) throw new RangeError(`resolution must be 0..${MAX_RES}`);
   const p = pad(bounds, r);
+  // refuse a hopeless request from its size alone: enumerating millions of cells only to throw would take tens of seconds and gigabytes
+  if (boundsAreaKm2(p) / getHexagonAreaAvg(r, 'km2') > maxCells * 2) throw new RangeError(`the viewport needs more than ${maxCells} cells at resolution ${r}`);
   const strips = p.west <= p.east ? [[p.west, p.east]] : [[p.west, 180], [-180, p.east]];
   const cells = new Set();
   for (const [w, e] of strips) {

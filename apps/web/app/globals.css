@@ -1,0 +1,29 @@
+:root { color-scheme: dark; --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --ok: #22c55e; --warn: #eab308; --bad: #ef4444; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+a { color: var(--accent); }
+main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
+h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+label { display: block; margin: 0.75rem 0 0.25rem; color: var(--muted); font-size: 0.9rem; }
+input, select, textarea, button { width: 100%; padding: 0.7rem; border-radius: 0.5rem; border: 1px solid #334155; background: var(--panel); color: var(--text); font: inherit; }
+button { background: var(--accent); color: #082f49; border: 0; font-weight: 600; cursor: pointer; margin-top: 1rem; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.banner { padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border: 1px solid transparent; }
+.banner.offline { background: #422006; border-color: var(--warn); }
+.banner.pending { background: #082f49; border-color: var(--accent); }
+.banner.error { background: #450a0a; border-color: var(--bad); }
+.banner.synced { background: #052e16; border-color: var(--ok); }
+.error-text { color: var(--bad); font-size: 0.85rem; margin: 0.25rem 0 0; }
+.list { list-style: none; padding: 0; margin: 1rem 0 0; }
+.list li { background: var(--panel); border-radius: 0.5rem; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; }
+.muted { color: var(--muted); font-size: 0.9rem; }
+.home-links { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.home-links a { display: block; padding: 1.25rem; background: var(--panel); border-radius: 0.75rem; text-decoration: none; font-size: 1.1rem; }
+.cc { display: grid; grid-template-columns: 1fr 20rem; grid-template-rows: 1fr auto; height: 100vh; }
+.cc .map { grid-row: 1 / span 2; min-height: 20rem; }
+.cc aside { padding: 0.75rem; overflow: auto; background: var(--bg); border-left: 1px solid #334155; }
+.cc .timebar { padding: 0.75rem; border-left: 1px solid #334155; background: var(--bg); }
+.cc input[type='range'] { padding: 0; }
+@media (max-width: 800px) { .cc { grid-template-columns: 1fr; grid-template-rows: 60vh auto auto; height: auto; } .cc .map { grid-row: 1; } }
