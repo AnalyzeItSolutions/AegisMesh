@@ -1,3 +1,12 @@
+PYTHON ?= python3
+VENV ?= .venv
+PY = $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,$(PYTHON))
+
+setup:
+	$(PYTHON) -m venv $(VENV)
+	$(VENV)/bin/pip install -q --upgrade pip
+	$(VENV)/bin/pip install -q pytest grpcio grpcio-tools protobuf h3 ortools
+
 up:
 	docker compose up -d --wait
 
@@ -10,11 +19,11 @@ topics:
 test:
 	cd services/sync-go && go test ./...
 	cd services/dispatch-go && go test ./...
-	cd services/routing-py && python -m pytest -q
+	cd services/routing-py && $(PY) -m pytest -q
 	cd services/telemetry-go && go test ./...
-	cd services/triage-py && python -m pytest -q
+	cd services/triage-py && $(PY) -m pytest -q
 
 bench:
 	@echo 'run the benchmark stages: python3 scripts/bench_assert.py --help'
 
-.PHONY: up down topics test bench
+.PHONY: setup up down topics test bench

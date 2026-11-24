@@ -11,9 +11,6 @@ jobs:
         with: {python-version: '3.12'}
       - uses: actions/setup-node@v4
         with: {node-version: 22}
-      - run: cd services/sync-go && go test ./...
-      - run: cd services/dispatch-go && go test ./...
-      - run: cd services/routing-py && python -m pytest -q
-      - run: cd services/telemetry-go && go test ./...
-      - run: cd services/triage-py && python -m pytest -q
+      - run: make setup
+      - run: make test
       - run: docker compose config -q
