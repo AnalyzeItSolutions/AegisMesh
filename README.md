@@ -1,6 +1,8 @@
-<p align="center"><img src="docs/banner/aegismesh-banner.png" alt="AegisMesh: offline-first, multi-tenant disaster response" width="900"></p>
+<p align="center"><img src="docs/banner/analyzeit-aegismesh-banner.png" alt="One page in, a working system out: AegisMesh, built with AnalyzeIt" width="900"></p>
 
 # AegisMesh
+
+> **A demo of what [AnalyzeIt](https://www.analyzeit.si)'s project builder can do, not a product.** One page of brief in; five services, a web app, a database, a gateway and CI out, for 237,355 tokens across 29 model calls. 14 of the 40 build stages cost zero tokens because rules wrote them. See [How it was built](#how-it-was-built).
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![Go](https://img.shields.io/badge/Go-services-00ADD8) ![Python](https://img.shields.io/badge/Python-routing%20%2B%20triage-3776AB) ![Next.js](https://img.shields.io/badge/Next.js-web%20app-black)
 
@@ -84,7 +86,17 @@ A bug the chaos test found: Redpanda's dev-container mode caches writes, so a ki
 
 ## How it was built
 
-Generated from a one-page brief by an open-source staged project builder (rules and templates first, a model only for the code that needs judgement), then hardened by hand against the real stack. The brief is `BRIEF.md`.
+Generated from a one-page brief ([`BRIEF.md`](BRIEF.md)) by AnalyzeIt's staged project builder, then hardened by hand against the real stack.
+
+| | |
+|---|---|
+| Tokens for the whole build | **237,355** (113k in, 124k out) across 29 model calls |
+| Stages | 40: **14 written by rules at zero token cost** (protobuf contracts, SQL migrations with row-level security, compose, gateway and Kubernetes config, CI, eight reusable libraries), 26 by the model, 3 reported as blocked because this machine lacked what they need |
+| Resume | a ledger tracks every stage, so a crash resumed instead of restarting |
+| Size | about 13,000 lines including tests |
+| Not measured | the same build without AnalyzeIt, so no percentage saved is claimed |
+
+The checks AnalyzeIt runs on the real stack found three faults no unit test had: a broker setting that lost acknowledged messages, a sync cursor that could skip late offline edits, and a gateway configuration with no token check. Each is fixed and is now a test.
 
 ## License
 
