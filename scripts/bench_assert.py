@@ -19,7 +19,7 @@ def main() -> int:
     ap.add_argument("name"); ap.add_argument("op", choices=list(OPS)); ap.add_argument("value", type=float)
     ap.add_argument("--cmd", required=True); ap.add_argument("--unit", default=""); ap.add_argument("--timeout", type=int, default=900)
     a = ap.parse_args()
-    p = subprocess.run(["bash", "-lc", a.cmd], capture_output=True, text=True, timeout=a.timeout)
+    p = subprocess.run(["bash", "-c", a.cmd], capture_output=True, text=True, timeout=a.timeout)   # not a login shell: its startup files would put the global Python ahead of the build's environment
     out = p.stdout + p.stderr
     found = re.findall(rf"^BENCH\s+{re.escape(a.name)}\s+(-?\d+(?:\.\d+)?)", out, re.M)
     if p.returncode != 0:
