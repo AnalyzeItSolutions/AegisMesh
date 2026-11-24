@@ -81,3 +81,7 @@ A bug the chaos test found: Redpanda's dev-container mode caches writes, so a ki
 ## How it was built
 
 Generated from a one-page brief by an open-source staged project builder (rules and templates first, a model only for the code that needs judgement), then hardened by hand against the real stack. The brief is `BRIEF.md`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
