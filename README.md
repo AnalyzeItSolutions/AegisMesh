@@ -1,4 +1,8 @@
+<p align="center"><img src="docs/banner/aegismesh-banner.png" alt="AegisMesh: offline-first, multi-tenant disaster response" width="900"></p>
+
 # AegisMesh
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![Go](https://img.shields.io/badge/Go-services-00ADD8) ![Python](https://img.shields.io/badge/Python-routing%20%2B%20triage-3776AB) ![Next.js](https://img.shields.io/badge/Next.js-web%20app-black)
 
 An offline-first, multi-tenant disaster-response platform: field responders report incidents with no connection, a command center watches rescue units move live on a map, every dispatch decision is written to a tamper-evident log, and one gateway keeps each organisation's data away from everyone else's.
 
