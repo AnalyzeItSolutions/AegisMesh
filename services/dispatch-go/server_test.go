@@ -265,3 +265,31 @@ func TestDispatchServiceAnswersARealGrpcCall(t *testing.T) {
 	}
 	_ = fmt.Sprint
 }
+
+// A restart builds a new Outbox over the SAME cursors (in production: the outbox_cursor table): it must carry on after the last published event.
+func TestRestartedOutboxResumesFromTheSavedCursor(t *testing.T) {
+	st := NewMemoryStore()
+	for i := 0; i < 3; i++ {
+		if _, err := st.Append(bg, tenantA, "aaaaaaaa-0000-4000-8000-00000000000"+string(rune('1'+i)), IncidentReported, json.RawMessage(`{}`), "u"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cursors := NewMemCursors()
+	first := &fakePublisher{}
+	if n, err := NewOutbox(st, first, cursors).Drain(bg, tenantA); err != nil || n != 3 {
+		t.Fatalf("first run: %d %v", n, err)
+	}
+	if _, err := st.Append(bg, tenantA, "aaaaaaaa-0000-4000-8000-000000000009", IncidentReported, json.RawMessage(`{}`), "u"); err != nil {
+		t.Fatal(err)
+	}
+	second := &fakePublisher{}
+	if n, err := NewOutbox(st, second, cursors).Drain(bg, tenantA); err != nil || n != 1 {
+		t.Fatalf("after restart only the new event goes out: %d %v", n, err)
+	}
+	if err := cursors.Set(bg, tenantA, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := cursors.Get(bg, tenantA); got != 4 {
+		t.Fatalf("a cursor never moves backwards: %d", got)
+	}
+}

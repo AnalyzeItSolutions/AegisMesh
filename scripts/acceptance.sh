@@ -96,6 +96,7 @@ if docker info >/dev/null 2>&1; then
   if [ -z "$(docker compose ps -q 2>/dev/null)" ]; then STARTED_STACK=1; fi
   soft "docker compose up --wait" docker compose up -d --wait
   soft "stack: services, migrations, row-level security, Redis, Redpanda, Keycloak, Envoy, Vault" clean python3 scripts/stack_check.py
+  soft "gateway: tokens, tenant isolation, forged tenant headers, WebSocket, CORS" clean python3 scripts/gateway_check.py
   if [ -n "${ACCEPT_CHAOS:-}" ]; then
     [ -n "$STARTED_STACK" ] && { docker compose down -v >/dev/null 2>&1; STARTED_STACK=""; }
     soft "zero-drop chaos test" bash scripts/chaos/zero_drop.sh

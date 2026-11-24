@@ -7,8 +7,10 @@ const STATE_KEY = 'state';
 
 /** A transport that POSTs the batch text and returns the reply text: {push(text), pull(text)}. The gateway turns it into the gRPC call. */
 export function fetchTransport(baseUrl, headers = {}, fetchImpl = globalThis.fetch) {
+  // `headers` may be a function (sync or async) called for every request, so a renewed token is picked up
   const post = async (path, body) => {
-    const res = await fetchImpl(`${baseUrl}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body });
+    const extra = typeof headers === 'function' ? await headers() : headers;
+    const res = await fetchImpl(`${baseUrl}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...extra }, body });
     if (!res.ok) throw new Error(`sync ${path} failed: ${res.status}`);
     return res.text();
   };

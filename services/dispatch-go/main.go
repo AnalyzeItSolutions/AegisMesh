@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -34,7 +35,11 @@ func main() {
 		defer kp.Close()
 		pub = kp
 	}
-	ob := NewOutbox(store, pub, NewMemCursors())
+	cursors := NewMemCursors()
+	if pg, ok := store.(*PGStore); ok {
+		cursors = pg.Cursors() // survives a restart: no republishing of the whole log
+	}
+	ob := NewOutbox(store, pub, cursors)
 	go ob.Run(ctx, time.Second)
 
 	lis, err := net.Listen("tcp", addr)
@@ -42,12 +47,24 @@ func main() {
 		log.Fatalf("listen %s: %v", addr, err)
 	}
 	g := grpc.NewServer()
-	pb.RegisterDispatchServiceServer(g, NewServer(NewDispatcher(store, NewLocks()), ob))
+	srv := NewServer(NewDispatcher(store, NewLocks()), ob)
+	pb.RegisterDispatchServiceServer(g, srv)
+	httpAddr := os.Getenv("HTTP_ADDR")
+	if httpAddr == "" {
+		httpAddr = ":8052"
+	}
+	hs := &http.Server{Addr: httpAddr, Handler: srv.HTTPHandler()}
+	go func() {
+		if err := hs.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("http %s: %v", httpAddr, err)
+		}
+	}()
 	go func() {
 		<-ctx.Done()
+		_ = hs.Shutdown(context.Background())
 		g.GracefulStop()
 	}()
-	log.Printf("dispatch service on %s", addr)
+	log.Printf("dispatch service: gRPC %s, HTTP %s", addr, httpAddr)
 	if err := g.Serve(lis); err != nil {
 		log.Fatal(err)
 	}

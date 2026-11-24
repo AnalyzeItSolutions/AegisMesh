@@ -221,6 +221,32 @@ func (s *PGStore) Verify(ctx context.Context, tenant string) (VerifyResult, erro
 	return verifyChain(all), nil
 }
 
+// PGCursors keeps the outbox cursors in the outbox_cursor table (db/migrations/0007_outbox_cursor.sql), under the same row-level security.
+type PGCursors struct{ s *PGStore }
+
+func (s *PGStore) Cursors() Cursors { return PGCursors{s} }
+
+func (c PGCursors) Get(ctx context.Context, tenant string) (int64, error) {
+	var seq int64
+	err := c.s.inTenantTx(ctx, tenant, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `select last_sequence_id from outbox_cursor where tenant_id = $1`, tenant).Scan(&seq)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	})
+	return seq, err
+}
+
+// Set never moves a cursor backwards.
+func (c PGCursors) Set(ctx context.Context, tenant string, seq int64) error {
+	return c.s.inTenantTx(ctx, tenant, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `insert into outbox_cursor (tenant_id, last_sequence_id) values ($1, $2)
+			on conflict (tenant_id) do update set last_sequence_id = greatest(outbox_cursor.last_sequence_id, excluded.last_sequence_id), updated_at = now()`, tenant, seq)
+		return err
+	})
+}
+
 // StoreFromEnv is the Postgres store when DATABASE_URL is set, otherwise the in-memory one.
 func StoreFromEnv(ctx context.Context) (EventStore, error) {
 	if url := os.Getenv("DATABASE_URL"); url != "" {

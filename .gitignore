@@ -1,10 +1,9 @@
-.builder/
-.pytest_cache/
-__pycache__/
 node_modules/
-target/
-*.test
-bin/
-*.egg-info/
-build/
+.next/
 .venv/
+.builder/
+__pycache__/
+*.pyc
+.terraform/
+*.tfstate*
+.env*

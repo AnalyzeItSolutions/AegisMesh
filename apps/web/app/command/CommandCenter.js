@@ -3,6 +3,8 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchTimeline } from '../../lib/events.js';
+import { apiBase, gatewayUrl, wsUrl } from '../../lib/gateway.js';
+import { currentToken, liveHeaders } from '../../lib/session.js';
 import { Feed, describeEvent, describeFrame } from '../../lib/feed.js';
 import { buildLayers } from '../../lib/layers.js';
 import { LiveConnection } from '../../lib/connection.js';
@@ -10,21 +12,10 @@ import { MarkerStore, parseServerMessage } from '../../lib/markers.js';
 import { emptyState } from '../../lib/replay.js';
 import { ViewportSubscription, fromMapBounds } from '../../lib/viewport.js';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8084/ws';
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api';
-const MAP_STYLE = process.env.NEXT_PUBLIC_MAP_STYLE ?? 'https://demotiles.maplibre.org/style.json'; // a public demo style: set your own tiles for real use
+const GATEWAY = gatewayUrl(process.env.NEXT_PUBLIC_GATEWAY_URL);
+const MAP_STYLE = process.env.NEXT_PUBLIC_MAP_STYLE ?? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'; // CARTO's free dark basemap (OpenStreetMap data), fine for a demo: set NEXT_PUBLIC_MAP_STYLE to your own tiles for real use
 const START_VIEW = { center: [77.59, 12.97], zoom: 11 };
 const STALE_UNIT_MS = 5 * 60_000;
-
-// The login flow (Keycloak) is not part of this page: it leaves the access token in sessionStorage.
-function authHeaders() {
-  try {
-    const t = sessionStorage.getItem('aegismesh.token');
-    return t ? { authorization: `Bearer ${t}` } : {};
-  } catch {
-    return {};
-  }
-}
 
 export default function CommandCenter() {
   const mapEl = useRef(null);
@@ -56,7 +47,7 @@ export default function CommandCenter() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchTimeline(API_URL, { headers: authHeaders() }).then((t) => !cancelled && setTimeline(t));
+    fetchTimeline(apiBase(GATEWAY), { headers: liveHeaders }).then((t) => !cancelled && setTimeline(t));
     return () => { cancelled = true; };
   }, []);
 
@@ -86,7 +77,7 @@ export default function CommandCenter() {
       cleanups.push(() => { if (raf !== null) cancelAnimationFrame(raf); drawRef.current = () => {}; });
 
       const connection = new LiveConnection({
-        url: WS_URL,
+        url: async () => wsUrl(GATEWAY, await currentToken()),
         onState: setConn,
         onMessage: (text) => {
           try {

@@ -49,11 +49,12 @@ func (d *discardPublisher) Publish(context.Context, string, string, []byte) erro
 	return nil
 }
 
-// Cursors remember, per tenant, the last sequence number that was published. The in-memory one forgets on restart, which only means
-// events are published again (at-least-once): consumers dedupe on tenant_id + sequence_id.
+// Cursors remember, per tenant, the last sequence number that was published. With Postgres (PGCursors) it survives a restart; the in-memory one
+// forgets, which only means events are published again (at-least-once): consumers dedupe on tenant_id + sequence_id either way, because a crash
+// between publishing an event and saving the cursor still republishes that event.
 type Cursors interface {
-	Get(tenant string) int64
-	Set(tenant string, seq int64)
+	Get(ctx context.Context, tenant string) (int64, error)
+	Set(ctx context.Context, tenant string, seq int64) error
 }
 
 type memCursors struct {
@@ -63,16 +64,19 @@ type memCursors struct {
 
 func NewMemCursors() Cursors { return &memCursors{m: map[string]int64{}} }
 
-func (c *memCursors) Get(tenant string) int64 {
+func (c *memCursors) Get(_ context.Context, tenant string) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.m[tenant]
+	return c.m[tenant], nil
 }
 
-func (c *memCursors) Set(tenant string, seq int64) {
+func (c *memCursors) Set(_ context.Context, tenant string, seq int64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.m[tenant] = seq
+	if seq > c.m[tenant] {
+		c.m[tenant] = seq
+	}
+	return nil
 }
 
 // Outbox publishes the event log in order. The log itself is the queue: nothing is lost if the broker is down, because a command only
@@ -109,7 +113,11 @@ func (o *Outbox) Notify(tenant string) {
 
 // Drain publishes everything after the tenant's cursor, in order, and stops at the first failure.
 func (o *Outbox) Drain(ctx context.Context, tenant string) (int, error) {
-	n, cur := 0, o.cursors.Get(tenant)
+	n := 0
+	cur, err := o.cursors.Get(ctx, tenant)
+	if err != nil {
+		return 0, err
+	}
 	for {
 		events, err := o.store.Load(ctx, tenant, cur, 200)
 		if err != nil {
@@ -129,7 +137,9 @@ func (o *Outbox) Drain(ctx context.Context, tenant string) (int, error) {
 			if err := o.pub.Publish(ctx, AuditTopic, strconv.FormatInt(e.SequenceID, 10), value); err != nil {
 				return n, err
 			}
-			o.cursors.Set(tenant, e.SequenceID)
+			if err := o.cursors.Set(ctx, tenant, e.SequenceID); err != nil {
+				return n, err
+			}
 			cur = e.SequenceID
 			n++
 		}

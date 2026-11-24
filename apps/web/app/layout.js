@@ -1,4 +1,5 @@
 import './globals.css';
+import SessionBadge from './SessionBadge.js';
 import SwRegister from './SwRegister.js';
 
 export const metadata = {
@@ -14,6 +15,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <SwRegister />
+        <SessionBadge />
         {children}
       </body>
     </html>

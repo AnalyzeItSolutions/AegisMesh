@@ -2,7 +2,10 @@ PYTHON ?= python3
 VENV ?= .venv
 PY = $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,$(PYTHON))
 
-setup:
+setdemo:
+	bash scripts/demo.sh
+
+up:
 	$(PYTHON) -m venv $(VENV)
 	$(VENV)/bin/pip install -q --upgrade pip
 	$(VENV)/bin/pip install -q pytest grpcio grpcio-tools protobuf h3 ortools
@@ -26,4 +29,4 @@ test:
 bench:
 	@echo 'run the benchmark stages: python3 scripts/bench_assert.py --help'
 
-.PHONY: setup up down topics test bench
+.PHONY: demo setup up down topics test bench

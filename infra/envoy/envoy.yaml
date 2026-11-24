@@ -1,83 +1,284 @@
-admin: {address: {socket_address: {address: 0.0.0.0, port_value: 9901}}}
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
 static_resources:
   listeners:
   - name: ingress
-    address: {socket_address: {address: 0.0.0.0, port_value: 8080}}
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 8080
     filter_chains:
     - filters:
       - name: envoy.filters.network.http_connection_manager
         typed_config:
-          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
           stat_prefix: ingress
+          codec_type: AUTO
+          use_remote_address: true
+          upgrade_configs:
+          - upgrade_type: websocket
           route_config:
             name: local
             virtual_hosts:
             - name: all
-              domains: ['*']
+              domains:
+              - '*'
               routes:
-              - match: {prefix: "/SyncService/"}
-                route: {cluster: sync}
-              - match: {prefix: "/DispatchService/"}
-                route: {cluster: dispatch}
-              - match: {prefix: "/RoutingService/"}
-                route: {cluster: routing}
-              - match: {prefix: "/TelemetryService/"}
-                route: {cluster: telemetry}
-              - match: {prefix: "/TriageService/"}
-                route: {cluster: triage}
+              - match:
+                  path: /healthz
+                direct_response:
+                  status: 200
+                  body:
+                    inline_string: ok
+              - match:
+                  prefix: /aegismesh.v1.SyncService/
+                route:
+                  cluster: sync
+                  timeout: 0s
+              - match:
+                  prefix: /api/sync/
+                route:
+                  cluster: sync_http
+                  timeout: 0s
+                  prefix_rewrite: /sync/
+              - match:
+                  prefix: /aegismesh.v1.DispatchService/
+                route:
+                  cluster: dispatch
+                  timeout: 0s
+              - match:
+                  prefix: /api/events
+                route:
+                  cluster: dispatch_http
+                  timeout: 0s
+                  prefix_rewrite: /events
+              - match:
+                  prefix: /aegismesh.v1.RoutingService/
+                route:
+                  cluster: routing
+                  timeout: 0s
+              - match:
+                  prefix: /aegismesh.v1.TelemetryService/
+                route:
+                  cluster: telemetry
+                  timeout: 0s
+              - match:
+                  prefix: /ws
+                route:
+                  cluster: telemetry_http
+                  timeout: 0s
+                  upgrade_configs:
+                  - upgrade_type: websocket
+              - match:
+                  prefix: /aegismesh.v1.TriageService/
+                route:
+                  cluster: triage
+                  timeout: 0s
+              typed_per_filter_config:
+                envoy.filters.http.cors:
+                  '@type': type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                  allow_origin_string_match:
+                  - exact: http://localhost:3000
+                  allow_methods: GET, POST, OPTIONS
+                  allow_headers: authorization, content-type, x-grpc-web, x-user-agent, grpc-timeout
+                  max_age: '600'
           http_filters:
+          - name: envoy.filters.http.cors
+            typed_config:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+          - name: envoy.filters.http.header_mutation
+            typed_config:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
+              mutations:
+                request_mutations:
+                - remove: x-tenant-id
+                - remove: x-actor-id
+          - name: envoy.filters.http.jwt_authn
+            typed_config:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+              providers:
+                keycloak:
+                  issuer: http://localhost:8081/realms/app
+                  remote_jwks:
+                    http_uri:
+                      uri: http://keycloak:8080/realms/app/protocol/openid-connect/certs
+                      cluster: keycloak
+                      timeout: 5s
+                    cache_duration: 60s
+                    async_fetch: {}
+                  from_headers:
+                  - name: Authorization
+                    value_prefix: 'Bearer '
+                  from_params:
+                  - access_token
+                  forward: false
+                  claim_to_headers:
+                  - header_name: x-tenant-id
+                    claim_name: tenant_id
+                  - header_name: x-actor-id
+                    claim_name: sub
+              rules:
+              - match:
+                  path: /healthz
+              - match:
+                  prefix: /
+                requires:
+                  provider_name: keycloak
           - name: envoy.filters.http.local_ratelimit
             typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+              '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
               stat_prefix: rl
-              token_bucket: {max_tokens: 200, tokens_per_fill: 200, fill_interval: 1s}
-              filter_enabled: {runtime_key: rl_on, default_value: {numerator: 100, denominator: HUNDRED}}
-              filter_enforced: {runtime_key: rl_enf, default_value: {numerator: 100, denominator: HUNDRED}}
+              token_bucket:
+                max_tokens: 200
+                tokens_per_fill: 200
+                fill_interval: 1s
+              filter_enabled:
+                runtime_key: rl_on
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
+              filter_enforced:
+                runtime_key: rl_enf
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
           - name: envoy.filters.http.router
-            typed_config: {"@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router}
+            typed_config:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
   - name: sync
     type: LOGICAL_DNS
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config: {http2_protocol_options: {}}
+    dns_lookup_family: V4_ONLY
     load_assignment:
       cluster_name: sync
-      endpoints: [{lb_endpoints: [{endpoint: {address: {socket_address: {address: host.docker.internal, port_value: 50051}}}}]}]
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 50051
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        '@type': type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+  - name: sync_http
+    type: LOGICAL_DNS
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: sync_http
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 8051
   - name: dispatch
     type: LOGICAL_DNS
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config: {http2_protocol_options: {}}
+    dns_lookup_family: V4_ONLY
     load_assignment:
       cluster_name: dispatch
-      endpoints: [{lb_endpoints: [{endpoint: {address: {socket_address: {address: host.docker.internal, port_value: 50052}}}}]}]
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 50052
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        '@type': type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+  - name: dispatch_http
+    type: LOGICAL_DNS
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: dispatch_http
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 8052
   - name: routing
     type: LOGICAL_DNS
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config: {http2_protocol_options: {}}
+    dns_lookup_family: V4_ONLY
     load_assignment:
       cluster_name: routing
-      endpoints: [{lb_endpoints: [{endpoint: {address: {socket_address: {address: host.docker.internal, port_value: 50053}}}}]}]
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 50053
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        '@type': type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
   - name: telemetry
     type: LOGICAL_DNS
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config: {http2_protocol_options: {}}
+    dns_lookup_family: V4_ONLY
     load_assignment:
       cluster_name: telemetry
-      endpoints: [{lb_endpoints: [{endpoint: {address: {socket_address: {address: host.docker.internal, port_value: 50054}}}}]}]
-  - name: triage
-    type: LOGICAL_DNS
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 50054
     typed_extension_protocol_options:
       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config: {http2_protocol_options: {}}
+        '@type': type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+  - name: telemetry_http
+    type: LOGICAL_DNS
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: telemetry_http
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 8084
+  - name: triage
+    type: LOGICAL_DNS
+    dns_lookup_family: V4_ONLY
     load_assignment:
       cluster_name: triage
-      endpoints: [{lb_endpoints: [{endpoint: {address: {socket_address: {address: host.docker.internal, port_value: 50055}}}}]}]
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: host.docker.internal
+                port_value: 50055
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        '@type': type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+  - name: keycloak
+    type: LOGICAL_DNS
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: keycloak
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: keycloak
+                port_value: 8080

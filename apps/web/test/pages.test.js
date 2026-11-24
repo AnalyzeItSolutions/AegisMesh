@@ -9,6 +9,7 @@ import { fetchTimeline } from '../lib/events.js';
 import { Feed, describeEvent, describeFrame } from '../lib/feed.js';
 import { KINDS, SEVERITIES, buildIncident, listIncidents, newId, parseIncident, syncStatus, validateReport } from '../lib/field.js';
 import { LWWMap } from '../lib/crdt.js';
+import { apiBase, authHeaders, DEFAULT_GATEWAY, gatewayUrl, readToken, TOKEN_KEY, wsUrl } from '../lib/gateway.js';
 import { fromMapBounds, viewportCells } from '../lib/viewport.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -163,7 +164,7 @@ const EVT = JSON.stringify([
 ]).replace('"h3_cell":"', '"h3_cell":');
 
 test('the event log loads into a timeline, and a missing or broken endpoint is reported, never thrown', async () => {
-  const ok = await fetchTimeline('/api', { fetchImpl: async (url, init) => { assert.equal(url, '/api/events'); assert.deepEqual(init.headers, { authorization: 'Bearer t' }); return { ok: true, text: async () => EVT }; }, headers: { authorization: 'Bearer t' } });
+  const ok = await fetchTimeline('/api', { fetchImpl: async (url, init) => { assert.equal(url, '/api/events?after=0&limit=5000'); assert.deepEqual(init.headers, { authorization: 'Bearer t' }); return { ok: true, text: async () => EVT }; }, headers: { authorization: 'Bearer t' } });
   assert.equal(ok.status, 'ready');
   assert.equal(ok.timeline.lastSeq, 2);
   assert.equal(ok.timeline.seek(1).incidents.i1.status, 'open');
@@ -224,4 +225,71 @@ test('the service worker caches the pages the app really has, and the manifest p
   assert.ok(statSync(join(ROOT, 'app', manifest.start_url, 'page.js')).isFile());
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   for (const dep of ['next', 'react', 'react-dom', 'maplibre-gl', '@deck.gl/core', '@deck.gl/layers', '@deck.gl/mapbox']) assert.ok(pkg.dependencies[dep], `${dep} must be a dependency`);
+});
+
+
+// ---------------------------------------------------------------------------------------------------------------------------- the gateway address and the token
+test('the browser talks to one gateway address, and a bad one is refused', () => {
+  assert.equal(gatewayUrl(undefined), DEFAULT_GATEWAY);
+  assert.equal(gatewayUrl('https://gw.example.test///'), 'https://gw.example.test');
+  assert.equal(apiBase('http://localhost:8080'), 'http://localhost:8080/api');
+  for (const bad of ['localhost:8080', 'ftp://x', 'http://', '/api']) assert.throws(() => gatewayUrl(bad), /must start with http/, bad);
+});
+
+test('the WebSocket address swaps the scheme and carries the token in the query, URL-encoded, because a browser cannot set headers there', () => {
+  assert.equal(wsUrl('http://localhost:8080'), 'ws://localhost:8080/ws');
+  assert.equal(wsUrl('https://gw.example.test', 'a.b-c'), 'wss://gw.example.test/ws?access_token=a.b-c');
+  assert.equal(wsUrl('http://localhost:8080', 'x y&z=1'), 'ws://localhost:8080/ws?access_token=x%20y%26z%3D1');
+});
+
+test('the token is read from storage when there is one, and a missing or blocked storage is just "no token"', () => {
+  assert.equal(readToken({ getItem: (k) => (k === TOKEN_KEY ? 'tok' : null) }), 'tok');
+  assert.equal(readToken({ getItem: () => null }), null);
+  assert.equal(readToken({ getItem: () => '' }), null);
+  assert.equal(readToken({ getItem: () => { throw new Error('blocked'); } }), null);
+  assert.equal(readToken(undefined), null, 'no sessionStorage in this environment');
+  assert.deepEqual(authHeaders('tok'), { authorization: 'Bearer tok' });
+  assert.deepEqual(authHeaders(null), {});
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------- loading a long log page by page
+function logServer(total) {
+  const events = Array.from({ length: total }, (_, i) => ({ sequence_id: i + 1, event_type: 'RoadBlocked', payload: { edge_id: `e${i + 1}` }, aggregate_id: 'a', tenant_id: 't' }));
+  const asked = [];
+  const fetchImpl = async (url) => {
+    const q = new URL(url, 'http://x').searchParams;
+    const after = Number(q.get('after'));
+    const limit = Number(q.get('limit'));
+    asked.push([after, limit]);
+    return { ok: true, text: async () => JSON.stringify(events.filter((e) => e.sequence_id > after).slice(0, limit)) };
+  };
+  return { fetchImpl, asked };
+}
+
+test('a long event log is loaded page by page, with no gaps or repeats, and then scrubbed', async () => {
+  const { fetchImpl, asked } = logServer(11);
+  const r = await fetchTimeline('/api', { fetchImpl, page: 4 });
+  assert.equal(r.status, 'ready');
+  assert.equal(r.timeline.lastSeq, 11);
+  assert.deepEqual(asked, [[0, 4], [4, 4], [8, 4]], 'each request continues where the last page ended');
+  assert.deepEqual(Object.keys(r.timeline.seek(6).blockedEdges), ['e1', 'e2', 'e3', 'e4', 'e5', 'e6']);
+});
+
+test('a log that is an exact multiple of the page size needs one more (empty) request, and an empty log is fine', async () => {
+  const exact = logServer(8);
+  assert.equal((await fetchTimeline('/api', { fetchImpl: exact.fetchImpl, page: 4 })).timeline.lastSeq, 8);
+  assert.deepEqual(exact.asked, [[0, 4], [4, 4], [8, 4]]);
+  const empty = logServer(0);
+  const r = await fetchTimeline('/api', { fetchImpl: empty.fetchImpl, page: 4 });
+  assert.equal(r.status, 'ready');
+  assert.equal(r.timeline.lastSeq, 0);
+});
+
+test('a failure on a later page is reported, and a log that is too large is not loaded whole', async () => {
+  const big = logServer(50);
+  assert.deepEqual(await fetchTimeline('/api', { fetchImpl: big.fetchImpl, page: 5, maxEvents: 12 }), { status: 'unavailable', reason: 'the log has more than 12 events: too many to load whole' });
+  assert.ok(big.asked.length <= 4, 'it stops asking once the limit is passed');
+  let n = 0;
+  const flaky = async () => (++n === 1 ? { ok: true, text: async () => JSON.stringify([{ sequence_id: 1, event_type: 'RoadBlocked', payload: { edge_id: 'e' } }]) } : { ok: false, status: 503 });
+  assert.deepEqual(await fetchTimeline('/api', { fetchImpl: flaky, page: 1 }), { status: 'unavailable', reason: 'the events endpoint answered 503' });
 });

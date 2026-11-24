@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KINDS, SEVERITIES, buildIncident, listIncidents, newId, syncStatus, validateReport } from '../../lib/field.js';
+import { apiBase, gatewayUrl } from '../../lib/gateway.js';
+import { liveHeaders } from '../../lib/session.js';
 import { openStore } from '../../lib/store.js';
 import { SyncClient, fetchTransport } from '../../lib/syncclient.js';
 
-const SYNC_URL = process.env.NEXT_PUBLIC_SYNC_URL ?? '/api';
+const GATEWAY = gatewayUrl(process.env.NEXT_PUBLIC_GATEWAY_URL);
 const EMPTY = { kind: 'flood', severity: 'red', lat: '', lon: '', note: '' };
 
 function replicaId() {
@@ -18,16 +20,6 @@ function replicaId() {
     return id;
   } catch {
     return newId(); // private window: this session only
-  }
-}
-
-// The login flow (Keycloak) is not part of this page: it is expected to leave the access token in sessionStorage.
-function authHeaders() {
-  try {
-    const t = sessionStorage.getItem('aegismesh.token');
-    return t ? { authorization: `Bearer ${t}` } : {};
-  } catch {
-    return {};
   }
 }
 
@@ -62,7 +54,7 @@ export default function FieldPage() {
     const goOffline = () => setOnline(false);
     (async () => {
       const store = await openStore();
-      const c = await new SyncClient({ store, transport: fetchTransport(SYNC_URL, authHeaders()), replicaId: replicaId(), online: () => navigator.onLine }).init();
+      const c = await new SyncClient({ store, transport: fetchTransport(apiBase(GATEWAY), liveHeaders), replicaId: replicaId(), online: () => navigator.onLine }).init();
       if (disposed) return;
       client.current = c;
       setOnline(navigator.onLine);

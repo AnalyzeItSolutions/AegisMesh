@@ -1,6 +1,10 @@
 {
   "realm": "app",
   "enabled": true,
+  "sslRequired": "none",
+  "attributes": {
+    "unmanagedAttributePolicy": "ENABLED"
+  },
   "roles": {
     "realm": [
       {
@@ -18,24 +22,97 @@
     {
       "clientId": "web",
       "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
       "redirectUris": [
         "http://localhost:3000/*"
       ],
       "webOrigins": [
-        "*"
+        "http://localhost:3000"
       ],
       "protocolMappers": [
         {
-          "name": "tenant",
+          "name": "tenant_id",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-attribute-mapper",
           "config": {
             "user.attribute": "tenant_id",
             "claim.name": "tenant_id",
             "access.token.claim": "true",
+            "id.token.claim": "true",
             "jsonType.label": "String"
           }
         }
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Dev",
+      "email": "alice@example.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "dispatcher"
+      ],
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ]
+      }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Dev",
+      "email": "bob@example.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "field"
+      ],
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ]
+      }
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Dev",
+      "email": "carol@example.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "carol-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
       ]
     }
   ]

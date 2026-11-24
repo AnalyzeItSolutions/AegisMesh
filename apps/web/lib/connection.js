@@ -5,7 +5,7 @@ const STATES = ['connecting', 'open', 'closed'];
 
 export class LiveConnection {
   /**
-   * @param url            ws:// or wss:// address
+   * @param url            ws:// or wss:// address, or a function returning one (or a promise of one), called on EVERY connect so a renewed token is used
    * @param WebSocketImpl  the WebSocket class (injectable for tests)
    * @param onMessage      (text) => void
    * @param onState        (state) => void, state is 'connecting' | 'open' | 'closed'
@@ -25,6 +25,7 @@ export class LiveConnection {
     this.timer = null;
     this.viewport = null; // the latest subscription message
     this.stopped = true;
+    this.generation = 0;
   }
 
   #set(state) {
@@ -41,7 +42,27 @@ export class LiveConnection {
   #connect() {
     this.timer = null;
     this.#set('connecting');
-    const ws = new this.WS(this.url);
+    if (typeof this.url !== 'function') return this.#open(this.url);
+    const attempt = ++this.generation;
+    Promise.resolve()
+      .then(() => this.url())
+      .then((u) => {
+        if (!this.stopped && attempt === this.generation) this.#open(u);
+      })
+      .catch(() => {
+        if (!this.stopped && attempt === this.generation) this.#retry(); // could not get an address (no session): try again later
+      });
+  }
+
+  #retry() {
+    this.#set('closed');
+    const pause = this.delays[Math.min(this.attempt, this.delays.length - 1)];
+    this.attempt++;
+    this.timer = this.timers.set(() => this.#connect(), pause);
+  }
+
+  #open(url) {
+    const ws = new this.WS(url);
     this.socket = ws;
     ws.onopen = () => {
       if (this.socket !== ws) return;
@@ -73,6 +94,7 @@ export class LiveConnection {
 
   stop() {
     this.stopped = true;
+    this.generation++;
     if (this.timer) this.timers.clear(this.timer);
     this.timer = null;
     const ws = this.socket;
